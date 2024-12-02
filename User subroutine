@@ -1,0 +1,502 @@
+
+      subroutine vuanisohyper_inv (
+C Read only (unmodifiable) variables –
+     *     nblock, nFiber, nInv, 
+     *     jElem, kIntPt, kLayer, kSecPt, 
+     *     cmname,
+     *     nstatev, nfieldv, nprops,
+     *     props, tempOld, tempNew, fieldOld, fieldNew,
+     *     stateOld, sInvariant, zeta,  
+     *     uDev, duDi, d2uDiDi,
+     *     stateNew )
+C
+      include 'vaba_param.inc'
+C
+      dimension props(nprops), 
+     *  tempOld(nblock),
+     *  fieldOld(nblock,nfieldv), 
+     *  stateOld(nblock,nstatev), 
+     *  tempNew(nblock),
+     *  fieldNew(nblock,nfieldv),
+     *  sInvariant(nblock,nInv), 
+     *  zeta(nblock,nFiber*(nFiber-1)/2),
+     *  uDev(nblock), duDi(nblock,nInv), 
+     *  d2uDiDi(nblock,nInv*(nInv+1)/2),
+     *  stateNew(nblock,nstatev)
+C
+      character*80 cmname
+C
+C     
+     	dimension Wmatrix(nblock), Wtensile(nblock), Wshear(nblock)
+     	dimension dWmatrix(nblock,nInv), d2Wmatrix(nblock,nInv*(nInv+1)/2)
+	dimension dWtensile(nblock,nInv), d2Wtensile(nblock,nInv*(nInv+1)/2)
+      dimension dWshear(nblock,nInv), d2Wshear(nblock,nInv*(nInv+1)/2)
+      dimension dW_matrixfiber(nblock,nInv), d2W_matrixfiber(nblock,nInv*(nInv+1)/2)
+C
+
+      do k=1,nblock
+C
+C
+C      
+      nI411 = indxInv4(1,1)
+      nI422 = indxInv4(2,2)
+      nI412 = indxInv4(1,2)
+C
+C
+      rI1 = sInvariant(k,1)
+      rI2 = sInvariant(k,2)
+
+      rJ  = sInvariant(k,3)
+
+      rI411 = sInvariant(k,nI411)
+
+      rI412 = sInvariant(k,nI412)
+
+      rI422 = sInvariant(k,nI422)
+C 
+C 
+
+C
+      call MatrixEnergy(rI1,rI2,rJ,props,nprops,nInv,nblock, 
+     &                  Wmatrix,dWmatrix,d2Wmatrix)  
+C 
+C  
+C
+      call TensileEnergy(rI411,rI422,props,nprops,nInv,nblock, 
+     &                   Wtensile,dWtensile,d2Wtensile)   
+C  
+C     
+
+       call  ShearEnergy(rI1,rI411,rI412,rI422,props, 
+     &                   nprops,nInv,nblock,nfiber,zeta,
+     &                   Wshear,dWshear,d2Wshear)
+       
+      call W_matrixfiber(props, numprops, ninv, rI4, rI5, rI8, rI9 
+     &                   Wmatrixfiber, dWmatrixfiber, d2Wmatrixfiber)
+C	total strain energy in the fabric
+C
+         uDev(k)=0.0
+         uDev(k)=uDev(k)+ Wmatrix(k)+Wtensile(k)+Wshear(k)+W_matrixfiber(k)
+C
+C  
+C
+C      
+C      
+         duDi(k,1)=dWmatrix(k,1)+dWshear(k,1)
+         duDi(k,2)=dWmatrix(k,2)
+         duDi(k,3)=dWmatrix(k,3)
+         duDi(k,nI411)=dWtensile(k,nI411)+dWshear(k,nI411)
+         duDi(k,nI412)=dWshear(k,nI412)
+         duDi(k,nI422)=dWtensile(k,nI422)+dWshear(k,nI422) 
+C
+C     
+C
+C      
+C      
+         d2uDiDi(k,indx(1, 1)) =d2Wshear(k,indx(1, 1))
+         d2uDiDi(k,indx(3, 3)) =d2Wmatrix(k,indx(3, 3))
+         d2uDiDi(k,indx(nI411,nI411))=d2Wtensile(k,indx(nI411,nI411))
+     &                                    +d2Wshear(k,indx(nI411,nI411))
+         d2uDiDi(k,indx(nI422,nI422))=d2Wtensile(k,indx(nI422,nI422))
+     &                                    +d2Wshear(k,indx(nI422,nI422))
+         d2uDiDi(k,indx(nI412,nI412))=d2Wshear(k,indx(nI412,nI412))
+         d2uDiDi(k,indx(1,nI411))=d2Wshear(k,indx(1,nI411))
+         d2uDiDi(k,indx(1,nI412))=d2Wshear(k,indx(1,nI412))
+         d2uDiDi(k,indx(1,nI422))=d2Wshear(k,indx(1,nI422))
+         d2uDiDi(k,indx(nI411,nI412))=d2Wshear(k,indx(nI411,nI412))
+         d2uDiDi(k,indx(nI411,nI422))=d2Wshear(k,indx(nI411,nI422))
+         d2uDiDi(k,indx(nI412,nI422))=d2Wshear(k,indx(nI412,nI422))
+C
+C
+C      state variables
+C      1, 2: fiber stretch ratio; 3: shear angle (in degree)
+      stateNew(k,1)=sqrt(rI411)
+      stateNew(k,2)=sqrt(rI422)
+      csita=rI412/sqrt(rI411*rI422)
+      if (csita.gt.0.0) then 
+      stateNew(k,3)=90.0-acos(csita)*180.0/3.14159
+      else 
+      stateNew(k,3)=acos(csita)*180.0/3.14159-90.0
+      endif
+      end do
+C
+      return
+      end
+C         
+      
+C
+C
+C     
+C
+C
+C
+C
+C-----------------------------------------------------------------------
+C
+C
+C-----------------------------------------------------------------------
+
+
+      integer function indx( i, j )
+      include 'vaba_param.inc'
+      ii = min(i,j)
+      jj = max(i,j)
+      indx = ii + jj*(jj-1)/2
+      return
+      end    
+C      
+4
+      integer function indxInv4( i, j )
+      include 'vaba_param.inc'
+      ii = min(i,j)
+      jj = max(i,j)
+      indxInv4 = 4 + jj*(jj-1) + 2*(ii-1)
+      return
+      end
+C
+
+C
+      integer function indxInv5( i, j )
+      include 'vaba_param.inc'
+      ii = min(i,j)
+      jj = max(i,j)
+      indxInv5 = 5 + jj*(jj-1) + 2*(ii-1)
+      return
+      end
+C      
+C-------------------------------------------------------------------------------
+
+      subroutine  MatrixEnergy(rI1,rI2,rJ,props,nprops,nInv,nblock,  
+     &                          Wmatrix,dWmatrix,d2Wmatrix)  
+C
+	include 'vaba_param.inc'	  
+C
+      dimension props(nprops)
+      dimension Wmatrix(nblock)
+      dimension dWmatrix(nblock,nInv), d2Wmatrix(nblock,nInv*(nInv+1)/2)
+C
+C     Read material properties
+C
+      C10 =props(1)
+      C01 =props(2)
+      D1 =props(3)
+     
+C
+
+C
+      do k=1,nblock
+      Wmatrix(k)=0
+      Wmatrix(k)=Wmatrix(k)+C10*(rI1-3.0)+C01*(rI2-3.0)
+     &                   +(rJ-1.0)*(rJ-1.0)/D1
+C
+
+      dWmatrix(k,1) =C10
+      dWmatrix(k,1) =C01
+      dWmatrix(k,3) =2.0*(rJ-1.0)/D1
+C     the 2nd derivatives of matrix strain energy w.r.t invariants
+C
+      d2Wmatrix(k,indx(3, 3))=2.0/D1
+      end do
+      return
+      end subroutine  MatrixEnergy  
+
+
+C
+C
+C 
+
+      subroutine  TensileEnergy(rI411,rI422,props,nprops,nInv,nblock, 
+     &                   Wtensile,dWtensile,d2Wtensile)   
+C
+	include 'vaba_param.inc'	  
+C
+      dimension props(nprops)
+	dimension Wtensile(nblock)
+	dimension Wtensile_4(nblock)
+	dimension Wtensile_8(nblock)
+	dimension dWtensile_4(nblock,nInv),dWtensile_8(nblock,nInv)
+	dimension d2Wtensile_44(nblock,nInv*(nInv+1)/2)
+	dimension d2Wtensile_88(nblock,nInv*(nInv+1)/2)
+	dimension dWtensile(nblock,nInv), d2Wtensile(nblock,nInv*(nInv+1)/2)
+C      
+C
+C     Read matebial properties
+      C2 = props(4)
+      C3 = props(5)
+
+C     
+      do k=1,nblock
+      nI411=indxInv4(1,1)
+      nI422=indxInv4(2,2)
+C      
+C      
+      Wtensile(k)=0.0
+      Wtensile_4(k)=0.0
+      Wtensile_8(k)=0.0   
+C      
+C      
+      if(rI411.gt.1.0) then
+      Wtensile_4(k) =Wtensile_4(k)+0.5*C2*(exp(C3*(rI411-1.0)**2))/C3- 
+     &                0.5*C2/C3
+C
+      dWtensile_4(k,nI411) = C2*(rI411-1.0)*(exp(C3*(rI411-1.0)**2))
+C      
+
+      d2Wtensile_44(k,indx(nI411,nI411))= C2*(exp(C3*(rI411-1.0)**2))+
+     &                 2.0*C2*C3*(rI411-1.0)*(rI411-1.0)*
+     &                 (exp(C3*(rI411-1.0)**2))
+      else
+      Wtensile_4(k) = Wtensile_4(k)+0.0001*C3*(1.0-rI411)**2
+
+C
+      dWtensile_4(k,nI411)= -0.0002*C3*(1.0-rI411)
+
+C
+      d2Wtensile_44(k,indx(nI411,nI411))= 0.0002*C3
+      end if
+C     
+C
+      if(rI422.gt.1.0) then
+      Wtensile_8(k) = Wtensile_8(k)+0.5*C2*(exp(C3*(rI422-1.0)**2))/C3-
+     &                0.5*C2/C3
+C
+
+      dWtensile_8(k,nI422) = C2*(rI422-1.0)*(exp(C3*(rI422-1.0)**2))
+C      
+
+      d2Wtensile_88(k,indx(nI422,nI422))= C2*(exp(C3*(rI422-1.0)**2))+
+     &                 2.0*C2*C3*(rI422-1.0)*(rI422-1.0)*
+     &                 (exp(C3*(rI422-1.0)**2))
+      else
+      Wtensile_8(k) = 0.0001*C3*(1.0-rI422)**2
+
+C
+      dWtensile_8(k,nI422)= -0.0002*C3*(1.0-rI422)
+
+C
+      d2Wtensile_88(k,indx(nI422,nI422))= 0.0002*C3
+      end if
+C      
+C      
+C     
+C    total tensile energy
+      Wtensile(k)=Wtensile(k)+Wtensile_4(k)+Wtensile_8(k)
+C     
+C
+C
+C      
+      dWtensile(k,nI411) = dWtensile_4(k,nI411)
+      dWtensile(k,nI422) = dWtensile_8(k,nI422) 
+C     
+C     
+      d2Wtensile(k,indx(nI411,nI411)) = 
+     &                             d2Wtensile_44(k,indx(nI411,nI411))
+      d2Wtensile(k,indx(nI422,nI422)) = 
+     &                             d2Wtensile_88(k,indx(nI422,nI422))
+      end do
+      return
+      end subroutine  TensileEnergy
+C      
+C      
+C      
+
+      subroutine  ShearEnergy(rI1,rI411,rI412,rI422,props, 
+     &                   nprops,nInv,nblock,nfiber,zeta,
+     &                   Wshear,dWshear,d2Wshear)
+C
+	include 'vaba_param.inc'	  
+C
+      dimension props(nprops)
+      dimension zeta(nblock,nfiber*(nfiber-1)/2)
+    	dimension Wshear(nblock)
+	dimension dWshear(nblock,nInv), d2Wshear(nblock,nInv*(nInv+1)/2)
+       
+C     material parameters for shear strain energy
+      C4 = props(6)
+      C5 = props(7)
+      C6 = props(8)
+C    
+      do k=1,nblock
+C      
+C      
+      nI411 = indxInv4(1,1)
+      nI422 = indxInv4(2,2)
+      nI412 = indxInv4(1,2)
+C      
+      Wshear(k)=0.0
+C
+
+C
+      temp48=1.0/sqrt(rI411*rI422)
+      frI10 =(rI1-3.0)*(rI412*temp48-zeta(k,1))    
+C      
+C     the derivatives of rI8ab w.r.t I1, I4, I6 and I8
+C
+      dfrI10_1 = rI412*temp48-zeta(k,1)
+      dfrI10_4 = -0.5*(rI1-3.0)*rI412*temp48/rI411
+      dfrI10_8 = -0.5*(rI1-3.0)*rI412*temp48/rI422
+      dfrI10_6 = (rI1-3.0)*temp48
+      d2frI10_11 = 0.0
+      d2frI10_44 = 0.75*(rI1-3.0)*rI412*temp48/(rI411*rI411)
+      d2frI10_88 = 0.75*(rI1-3.0)*rI412*temp48/(rI422*rI422)
+      d2frI10_66 = 0.0
+      d2frI10_14 = -0.5*rI412*temp48/rI411
+      d2frI10_18 = -0.5*rI412*temp48/rI422
+      d2frI10_16 = temp48
+      d2frI10_48 = 0.25*(rI1-3.0)*rI412*temp48*temp48*temp48
+      d2frI10_46 = -0.5*(rI1-3.0)*temp48/rI411
+      d2frI10_68 = -0.5*(rI1-3.0)*temp48/rI422
+C     
+C     total shear strain energy 
+      Wshear(k)=Wshear(k)+ C4*frI10**4 + C5*(abs(frI10))**3 
+     &                 + C6*frI10**2 
+C
+C     the derivatives of interaction strain energy w.r.t invariants
+C
+      if (frI10.lt.0.0) then 
+        dWshear_frI10 = 4.0*C4*frI10**3 - 3.0*C5*frI10**2 + 
+     &                 2.0*C6*frI10
+        d2Wshear_frI10 = 12.0*C4*frI10**2 - 6.0*C5*frI10 + 2.0*C6
+      else
+        dWshear_frI10 = 4.0*C4*frI10**3 + 3.0*C5*frI10**2 + 
+     &                 2.0*C6*frI10
+        d2Wshear_frI10 = 12.0*C4*frI10**2 + 6.0*C5*frI10 + 2.0*C6
+      end if 
+C       
+      dWshear(k,1) = dWshear_frI10*dfrI10_1
+      dWshear(k,nI411) = dWshear_frI10*dfrI10_4 
+      dWshear(k,nI412) = dWshear_frI10*dfrI10_6
+      dWshear(k,nI422) = dWshear_frI10*dfrI10_8
+C    2nd derivatives
+      d2Wshear(k,indx(1, 1)) = d2Wshear_frI10*dfrI10_1*dfrI10_1
+      d2Wshear(k,indx(nI411, nI411))=d2Wshear_frI10*dfrI10_4*dfrI10_4
+     &                                         +dWshear_frI10*d2frI10_44
+      d2Wshear(k,indx(nI412, nI412))=d2Wshear_frI10*dfrI10_6*dfrI10_6
+      d2Wshear(k,indx(nI422, nI422))=d2Wshear_frI10*dfrI10_8*dfrI10_8
+     &                                         +dWshear_frI10*d2frI10_88
+      d2Wshear(k,indx(1, nI411))=d2Wshear_frI10*dfrI10_1*dfrI10_4 
+     &                                         +dWshear_frI10*d2frI10_14
+      d2Wshear(k,indx(1, nI412))=d2Wshear_frI10*dfrI10_1*dfrI10_6
+     &                                         +dWshear_frI10*d2frI10_16
+      d2Wshear(k,indx(1, nI422))=d2Wshear_frI10*dfrI10_1*dfrI10_8
+     &                                         +dWshear_frI10*d2frI10_18
+      d2Wshear(k,indx(nI411, nI412))=d2Wshear_frI10*dfrI10_4*dfrI10_6
+     &                                         +dWshear_frI10*d2frI10_46
+      d2Wshear(k,indx(nI411, nI422))=d2Wshear_frI10*dfrI10_4*dfrI10_8
+     &                                         +dWshear_frI10*d2frI10_48
+      d2Wshear(k,indx(nI412, nI422))=d2Wshear_frI10*dfrI10_6*dfrI10_8
+     &                                         +dWshear_frI10*d2frI10_68
+      end do
+      return
+end subroutine  ShearEnergy
+c---------------------------------------------------------------------------
+  subroutine  W_matrixfiber(props,numprops,ninv, rI4,rI5,rI8,rI9 
+     &                Wmatrixfiber,dWmatrixfiber, d2Wmatrixfiber )   
+C
+	include 'ABA_PARAM.INC'	 
+C
+      dimension props(numprops)
+      dimension dWmatrixfiber(ninv), d2Wmatrixfiber(ninv*(ninv+1)/2)  
+C     material parameters for tensile strain energy
+C
+      ak1 = props(1)
+      ak2 = props(2)
+C      
+C     material parameters for pure strain energy   
+C 
+      ak3 = props(3)
+      ak4 = props(4)
+      ak5 = props(5)
+C      
+C     material parameters for matrix energy
+C
+      ak6 = props(6)
+      ak7 = props(7)
+C      
+C     material parameters for fiber and matrix energy
+C     ak8:rafa, ak9:beta, ak10:xing
+      ak8 = props(8)
+      ak9 = props(9)
+      ak10 = props(10)
+C      
+C     matrix and fiber interaction energy
+C
+      Wmatrixfiber_4=ak8*(rI5-rI4*rI4)**2/(1.0+exp(-ak9*(dsqrt(rI4)
+     &                 -ak10)))
+C
+C     the 1st derivatives of tensile strain energy w.r.t invariants rI4,rI5
+C
+      temp2 = exp(-ak9*(dsqrt(rI4)-ak10))
+      dWmatrixfiber_4=ak8*(2.0*(rI5-rI4*rI4)*(-2.0*rI4)*(1+temp2)
+     &            -(rI5-rI4*rI4)**2*temp2*(-ak9*0.5*rI4**-0.5))
+     &                  /(1+temp2)**2
+      dWmatrixfiber_5 = ak8*2.0*(rI5-rI4*rI4)/(1+temp2)
+C     
+C     the 2nd derivatives of tensile strain energy w.r.t invariants rI4,rI5
+C
+      d2Wmatrixfiber_44=(-4.0*ak8*((rI5-3.0*rI4*rI4)*(1+temp2)-
+     &            (rI5*rI4-rI4**3)*(temp2*(-ak9*0.5*rI4**-0.5)))/
+     &         (1+temp2)**2)-(ak8*(2.0*(rI5-rI4**2)*(-2.0*rI4)*
+     &                temp2*(-ak9*0.5*rI4**-0.5))+(rI5-rI4*rI4)**2*
+     &                   (temp2*(-ak9*0.5*rI4**-0.5)**2+temp2*
+     &                   (-ak9*0.5*rI4**-0.5))*(1+temp2)**2-ak8*
+     &            (rI5-rI4*rI4)**2*temp2*(-ak9*0.5*rI4**-0.5)*2.0*
+     &                   (1+temp2)*temp2*(-ak9*0.5*rI4**-0.5))/
+     &                   ((1+temp2)**4)
+      d2Wmatrixfiber_45= ak8*(-4.0*rI4*(1+temp2)-2.0*(rI5-rI4*rI4)
+     &                   *temp2*(-ak9*0.5*rI4**-0.5))/(1+temp2)**2
+      d2Wmatrixfiber_55= 2.0*ak8/(1+temp2)
+C
+C-------------------------------------------------------------------------------------
+C 
+      Wmatrixfiber_8=ak8*(rI9-rI8*rI8)**2/(1.0+exp(-ak9*(dsqrt(rI8)
+     &                 -ak10)))
+C      
+      temp3 = exp(-ak9*(dsqrt(rI8)-ak10))
+C
+C     the 1st derivatives of matrix and fiber energy w.r.t invariants rI8,rI9
+      dWmatrixfiber_8 =ak8*(2.0*(rI9-rI8*rI8)*(-2.0*rI8)*(1+temp3)
+     &            -(rI9-rI8*rI8)**2*temp3*(-ak9*0.5*rI8**-0.5))
+     &                  /(1+temp3)**2
+      dWmatrixfiber_9 = ak8*2.0*(rI9-rI8*rI8)/(1+temp3)
+C     
+C     the 2nd derivatives of matrix and fiber energy w.r.t invariants rI8
+C
+      d2Wmatrixfiber_88= (-4.0*ak8*((rI9-3.0*rI8*rI8)*(1+temp3)-
+     &            (rI9*rI8-rI8**3)*(temp3*(-ak9*0.5*rI8**-0.5)))/
+     &            (1+temp3)**2)-(ak8*(2.0*(rI9-rI8**2)*(-2.0*rI8)*
+     &               temp3*(-ak9*0.5*rI8**-0.5))+(rI9-rI8*rI8)**2*
+     &                   (temp3*(-ak9*0.5*rI8**-0.5)**2+temp3*
+     &                   (-ak9*0.5*rI8**-0.5))*(1+temp3)**2-ak8*
+     &            (rI9-rI8*rI8)**2*temp3*(-ak9*0.5*rI8**-0.5)*2.0*
+     &                   (1+temp3)*temp3*(-ak9*0.5*rI8**-0.5))/
+     &                   (1+temp3)**4
+      d2Wmatrixfiber_89=ak8*(-4.0*rI8*(1+temp3)-2.0*(rI9-rI8*rI8)*
+     &                  temp3*(-ak9*0.5*rI8**-0.5))/(1+temp3)**2
+      d2Wmatrixfiber_99 = 2.0*ak8/(1+temp3)
+C----------------------------------------------------------------------------------------------------
+C    total energy
+      Wmatrixfiber=Wmatrixfiber_4 + Wmatrixfiber_8
+C   
+C
+      do kinv = 1, ninv
+        dWmatrixfiber(kinv) = 0.0 
+      end do
+      dWmatrixfiber(4) = dWmatrixfiber_4
+      dWmatrixfiber(5) = dWmatrixfiber_5 
+      dWmatrixfiber(8) = dWmatrixfiber_8
+      dWmatrixfiber(9) = dWmatrixfiber_9 
+C    2nd derivatives
+      do kinv = 1, ninv*(ninv+1)/2
+        d2Wmatrixfiber(kinv) = 0.0 
+      end do 
+      d2Wmatrixfiber(indx(4, 4)) = d2Wmatrixfiber_44
+      d2Wmatrixfiber(indx(4, 5)) = d2Wmatrixfiber_45
+      d2Wmatrixfiber(indx(5, 5)) = d2Wmatrixfiber_55      
+      d2Wmatrixfiber(indx(8, 8)) = d2Wmatrixfiber_88
+      d2Wmatrixfiber(indx(8, 9)) = d2Wmatrixfiber_89
+      d2Wmatrixfiber(indx(9, 9)) = d2Wmatrixfiber_99 
+      
+      return
+      end subroutine  W_matrixfiber    
+!------------------------------------------------------------------------
